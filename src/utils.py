@@ -37,7 +37,7 @@ def get_files_dict(file_path):
         file_dir_parts = root.split('\\')[7:]
         for file in files[1:]:
             state = bool(re.search('states.*.mat', file))
-            hpc = bool(re.search(r"\bhpc.*.mat", file))
+            hpc = bool(re.search(r"\bHPC.*.mat", file))
             if state or hpc:
                 file_dir_parts.append(file)
 
