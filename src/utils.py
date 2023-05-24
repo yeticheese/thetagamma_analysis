@@ -1,6 +1,8 @@
 import yaml
 import os
 import re
+import itertools
+import scipy.io as sio
 
 
 def load_config(config_path):
@@ -16,12 +18,12 @@ def get_files_dict(file_path):
     representing the file structure, along with extracted information from the file paths.
 
     Args:
-        path (str): The path to the root directory.
+        file_path (str): The path to the root directory.
 
     Returns:
         dict: A nested dictionary representing the file structure and extracted information.
             The keys are directory names, and the values are nested dictionaries or file names
-             and extracted information parsed with RegEx from file paths.
+            and extracted information parsed with RegEx from file paths.
 
     Example:
         file_dict = get_files_dict('/path/to/directory')
@@ -29,12 +31,18 @@ def get_files_dict(file_path):
     """
     file_dict = {}
 
-    for root, dirs, files in os.walk(file_path, topdown=True):
+    if isinstance(file_path, tuple):  # If it's a tuple of paths
+        all_iterators = (os.walk(path, topdown=True) for path in file_path)
+        walker = itertools.chain(*all_iterators)
+    else:  # If it's a single path
+        walker = os.walk(file_path, topdown=True)
+
+    for root, dirs, files in walker:
         rat_conditions = re.findall('Rat\d|HC|OR|OD|presleep|SD\d|posttrial\d', root)
         if len(rat_conditions) < 4:
             continue
 
-        file_dir_parts = root.split('\\')[7:]
+        file_dir_parts = root.split(os.sep)[7:]
         for file in files[1:]:
             state = bool(re.search('states.*.mat', file))
             hpc = bool(re.search(r"\bHPC.*.mat", file))
@@ -53,3 +61,23 @@ def get_files_dict(file_path):
         sub_dict['states'] = file_dir_parts[-2]
 
     return file_dict
+
+
+def process_function(func, **kwargs):
+    func(**kwargs)
+
+
+# def dict_walk(file_dict, folder_root, func, **kwargs):
+def dict_walk(file_dict, folder_root):
+    for rat, day_trial_dict in zip(file_dict.keys(), file_dict.values()):
+        # Get the last sub-dictionary in the current sub-dictionary
+        for day_trial_type, sleep_type_dict in zip(day_trial_dict.keys(), day_trial_dict.values()):
+            for sleep_type, last_dict in zip(sleep_type_dict.keys(), sleep_type_dict.values()):
+                state = last_dict['states']
+                hpc = last_dict['HPC']
+                states_file_path = f'{folder_root}/{rat}/{day_trial_type}/{sleep_type}/{state}'
+                states = sio.loadmat(f'{states_file_path}')
+                HPC_file_path = f'{folder_root}/{rat}/{day_trial_type}/{sleep_type}/{hpc}'
+                HPC = sio.loadmat(f'{HPC_file_path}')
+    return states, HPC
+                # process_function(func, **kwargs)
