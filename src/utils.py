@@ -73,11 +73,18 @@ def dict_walk(file_dict, folder_root):
         # Get the last sub-dictionary in the current sub-dictionary
         for day_trial_type, sleep_type_dict in zip(day_trial_dict.keys(), day_trial_dict.values()):
             for sleep_type, last_dict in zip(sleep_type_dict.keys(), sleep_type_dict.values()):
-                state = last_dict['states']
-                hpc = last_dict['HPC']
-                states_file_path = f'{folder_root}/{rat}/{day_trial_type}/{sleep_type}/{state}'
+                file_path = r'{folder_root}\{rat}\{day_trial_type}\{sleep_type}\{state}'
+                states_file_path = file_path.format(folder_root=folder_root,
+                                                    rat=rat,
+                                                    day_trial_type=day_trial_type,
+                                                    sleep_type=sleep_type,
+                                                    state=last_dict['states'])
+                HPC_file_path = file_path.format(folder_root=folder_root,
+                                                 rat=rat,
+                                                 day_trial_type=day_trial_type,
+                                                 sleep_type=sleep_type,
+                                                 state=last_dict['HPC'])
                 states = sio.loadmat(f'{states_file_path}')
-                HPC_file_path = f'{folder_root}/{rat}/{day_trial_type}/{sleep_type}/{hpc}'
                 HPC = sio.loadmat(f'{HPC_file_path}')
     return states, HPC
                 # process_function(func, **kwargs)
