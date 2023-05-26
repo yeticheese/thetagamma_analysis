@@ -1,6 +1,7 @@
 import numpy as np
 import scipy
 import emd.sift as sift
+import emd.spectra as spectra
 
 
 def get_rem_states(rem_states, s_rate):
@@ -86,18 +87,24 @@ def extrema(x):
     return zero_xs, troughs, peaks
 
 
-def get_cycles_data(x, rem_states, s_rate,theta_range=(5, 12)):
+def get_cycles_data(x, rem_states, s_rate, theta_range=(5, 12)):
     consecutive_rem_states = get_rem_states(rem_states, s_rate)
     rem_imf = []
     rem_mask_freq = []
+    instantaneous_phase = []
+    instantaneous_freq = []
+    instantaneous_amp = []
     sub_theta_sig = np.empty((0,))
     zero_xs = np.empty((0, 2)).astype(int)
     troughs = np.empty((0, 2)).astype(int)
     peaks = np.empty((0, 1)).astype(int)
     theta_peak_sig = np.empty((0,))
 
+    rem_dict = {}
+    sub_dict = rem_dict
+
     for i, rem in enumerate(consecutive_rem_states):
-        print(f'REM{i}')
+        sub_dict.setdefault(f'REM {i + 1}', {})
         start = int(rem[0])
         end = int(rem[1])
         signal = x[start:end]
@@ -105,9 +112,14 @@ def get_cycles_data(x, rem_states, s_rate,theta_range=(5, 12)):
                                                  mask_0='zc',
                                                  sample_rate=s_rate,
                                                  ret_mask_freq=True)
+        IP, IF, IA = spectra.frequency_transform(imf, s_rate, 'nht')
         sub_theta, theta, _ = tg_split(mask_freq, theta_range)
+
         rem_imf.append(imf)
         rem_mask_freq.append(mask_freq)
+        instantaneous_phase.append(IP)
+        instantaneous_freq.append(IF)
+        instantaneous_amp.append(IA)
 
         theta_sig = np.sum(imf.T[theta], axis=0)
         sub_theta_sig = np.append(sub_theta_sig, np.sum(imf.T[sub_theta], axis=0))
@@ -135,8 +147,16 @@ def get_cycles_data(x, rem_states, s_rate,theta_range=(5, 12)):
     troughs = troughs[extrema_mask]
     peaks = peaks[extrema_mask]
     zero_xs = zero_xs[extrema_mask]
-    return rem_imf, rem_mask_freq, zero_xs, troughs, peaks
 
-
-
-
+    for j, rem in enumerate(rem_dict.values()):
+        rem['start-end'] = consecutive_rem_states[j]
+        rem['IMFs'] = rem_imf[j]
+        rem['IMF_Frequencies'] = rem_mask_freq[j]
+        rem['Instantaneous Phases'] = instantaneous_phase[j]
+        rem['Instantaneous Frequencies'] = instantaneous_freq[j]
+        rem['Instantaneous Amplitudes'] = instantaneous_amp[j]
+        rem['Zero Crossings'] = zero_xs[
+            (zero_xs >= consecutive_rem_states[j, 0]) & (zero_xs <= consecutive_rem_states[j, 1])]
+        rem['Troughs'] = troughs[(troughs >= consecutive_rem_states[j, 0]) & (troughs <= consecutive_rem_states[j, 1])]
+        rem['Peaks'] = peaks[(peaks >= consecutive_rem_states[j, 0]) & (peaks <= consecutive_rem_states[j, 1])]
+    return rem_dict
