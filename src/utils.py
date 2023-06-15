@@ -3,6 +3,7 @@ import os
 import re
 import itertools
 import scipy.io as sio
+import inspect
 
 
 def load_config(config_path):
@@ -38,7 +39,7 @@ def get_files_dict(file_path):
         walker = os.walk(file_path, topdown=True)
 
     for root, dirs, files in walker:
-        rat_conditions = re.findall('Rat\d|HC|OR|OD|presleep|SD\d|posttrial\d', root)
+        rat_conditions = re.findall('Rat\d|HC|OR|OD|presleep|SD\d\d|SD\d|posttrial\d', root)
         if len(rat_conditions) < 4:
             continue
 
@@ -54,7 +55,7 @@ def get_files_dict(file_path):
             sub_dict = sub_dict.setdefault(part, {})
 
         sub_dict['rat'] = int(re.findall('\d', rat_conditions[0])[0])
-        sub_dict['study_day'] = int(re.findall('\d', rat_conditions[1])[0])
+        sub_dict['study_day'] = int(re.findall('\d\d|\d', rat_conditions[1])[0])
         sub_dict['condition'] = rat_conditions[2]
         sub_dict['trial'] = rat_conditions[3]
         sub_dict['HPC'] = file_dir_parts[-1]
@@ -63,17 +64,39 @@ def get_files_dict(file_path):
     return file_dict
 
 
-def process_function(func, **kwargs):
-    func(**kwargs)
+def process_functions(*functions, **kwargs):
+    kwargs['output_data'] = None
+    for func in functions:
+        # Get the function signature
+        signature = inspect.signature(func)
+        # Get the function parameters
+        params = signature.parameters
+        if kwargs['output_data'] is None:
+            kwargs = kwargs
+        else:
+            kwargs[str(next(iter(params)))] = kwargs['output_data']
+        # Get the remaining keyword arguments
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k in params}
+        print(filtered_kwargs)
+        # # Call the function with the positional arguments and filtered kwargs
+        kwargs['output_data'] = func(**filtered_kwargs)
+
+
+def dict_write(rem_dict, header_dict, write_filename):
+    rem_record = header_dict
+    rem_record.update(rem_dict)
+    sio.savemat(f'{write_filename}', rem_record)
 
 
 # def dict_walk(file_dict, folder_root, func, **kwargs):
-def dict_walk(file_dict, folder_root):
+def dict_walk(file_dict, folder_root, *functions, **kwargs):
     for rat, day_trial_dict in zip(file_dict.keys(), file_dict.values()):
         # Get the last sub-dictionary in the current sub-dictionary
         for day_trial_type, sleep_type_dict in zip(day_trial_dict.keys(), day_trial_dict.values()):
             for sleep_type, last_dict in zip(sleep_type_dict.keys(), sleep_type_dict.values()):
                 file_path = r'{folder_root}\{rat}\{day_trial_type}\{sleep_type}\{state}'
+                filename_struct = r'{folder_root}\{rat}\{day_trial_type}\{sleep_type}\Rat{rat}_SD{study_day}_{' \
+                                  r'condition}_{trial}'
                 states_file_path = file_path.format(folder_root=folder_root,
                                                     rat=rat,
                                                     day_trial_type=day_trial_type,
@@ -86,5 +109,23 @@ def dict_walk(file_dict, folder_root):
                                                  state=last_dict['HPC'])
                 states = sio.loadmat(f'{states_file_path}')
                 HPC = sio.loadmat(f'{HPC_file_path}')
-    return states, HPC
-                # process_function(func, **kwargs)
+                write_filename = filename_struct.format(folder_root=folder_root,
+                                                        rat=rat,
+                                                        day_trial_type=day_trial_type,
+                                                        sleep_type=sleep_type,
+                                                        study_day=last_dict['study_day'],
+                                                        condition=last_dict['condition'],
+                                                        trial=last_dict['trial'])
+                if os.path.exists(write_filename):
+                    print("Filename already exists")
+                    continue
+                else:
+                    header_dict = {'header_info': {'rat': last_dict['rat'],
+                                                   'study_day': last_dict['study_day'],
+                                                   'condition': last_dict['condition'],
+                                                   'trial': last_dict['trial']}}
+                    kwargs.update({'x': HPC['HPC'],
+                                   'rem_states': states['states'],
+                                   'header_dict': header_dict,
+                                   'write_filename': write_filename})
+                    process_functions(*functions, **kwargs)
