@@ -18,40 +18,15 @@ def get_rem_states(rem_states, s_rate):
     return consecutive_rem_states
 
 
-def morlet_wt(x, s_rate=2500, freq_range=(1, 200), tcenter=4, n=5, zscore=True, mode='amplitude'):
-    global convuP
-    tcenter = np.arange(np.negative(tcenter), tcenter, 1 / s_rate)
-    nSignal = len(x)
-
-    freq_vec = np.arange(np.min(freq_range), np.max(freq_range), 1)
-
-    tf = np.empty((len(freq_vec), len(x)))
-
-    for i, fi in enumerate(freq_vec):
-        h = (n * (2 * np.log(2)) ** 0.5) / (np.pi * fi)
-        cmorl = np.exp(1j * 2 * np.pi * fi * tcenter) * np.exp((-4 * np.log(2) * tcenter ** 2) / h ** 2)
-        nKern = len(cmorl)
-        halfKern = int(np.floor(nKern / 2))
-        nConvu = nSignal + nKern - 1
-        cmorlX = scipy.fft.fft(cmorl, nConvu)
-        cmorlX = cmorlX / max(cmorlX)
-        lfpX = scipy.fft.fft(x, nConvu)
-        convuX = cmorlX * lfpX
-        convu = scipy.fft.ifft(convuX)
-        start = halfKern
-        end = len(convu) - start
-        convuFix = convu[start:end + 1]
-        if mode == 'amplitude':
-            convuP = np.abs(convuFix)
-        elif mode == 'power':
-            convuP = np.abs(convuFix) ** 2
-
-        tf[i:] = convuP
-    if zscore:
-        tfz = scipy.stats.zscore(tf, axis=0)
-        return tfz
-    else:
-        return tf
+def morlet_wt(x, sample_rate=2500, freq_range=(1, 200), n=5):
+    freq = np.arange(np.min(freq_range), np.max(freq_range), 1)
+    wavelet_transform = np.zeros((len(freq), len(x)), dtype=complex)
+    for i, freq in enumerate(freq):
+        h = (n * (2 * np.log(2)) ** 0.5) / (np.pi * freq)
+        tcenter = np.arange(len(x)) / sample_rate - 0.5 * len(x) / sample_rate
+        wavelet = np.exp(1j * 2 * np.pi * freq * tcenter) * np.exp((-4 * np.log(2) * tcenter ** 2) / h ** 2)
+        wavelet_transform[i, :] = np.convolve(x.T, wavelet, mode='same')
+    return wavelet_transform
 
 
 def tg_split(mask_freq, theta_range=(5, 12)):
@@ -161,11 +136,21 @@ def get_cycles_data(x, rem_states, sample_rate, theta_range=(5, 12)):
         rem['Instantaneous Frequencies'] = instantaneous_freq[j]
         rem['Instantaneous Amplitudes'] = instantaneous_amp[j]
         rem_zx = (zero_xs[:, 0] > int(consecutive_rem_states[j, 0])) & (
-                    zero_xs[:, 1] < int(consecutive_rem_states[j, 1]))
+                zero_xs[:, 1] < int(consecutive_rem_states[j, 1]))
         rem_troughs = (troughs[:, 0] >= int(consecutive_rem_states[j, 0])) & (
-                    troughs[:, 1] <= int(consecutive_rem_states[j, 1]))
+                troughs[:, 1] <= int(consecutive_rem_states[j, 1]))
         rem_peaks = (peaks > int(consecutive_rem_states[j, 0])) & (peaks < int(consecutive_rem_states[j, 1]))
         cycles_mask = np.logical_and(np.logical_and(rem_troughs, rem_zx), rem_peaks, out=cycles_mask)
         rem_cycles = cycles[cycles_mask]
         rem['Cycles'] = rem_cycles
     return rem_dict
+
+
+def calculate_cog_f(frequencies, amplitudes):
+    numerator = np.empty(amplitudes.shape)
+    for i, f in enumerate(frequencies):
+        numerator[i] = f * amplitudes[i, :]
+    numerator = np.sum(numerator)
+    denominator = np.sum(amplitudes)
+    cog = numerator / denominator
+    return cog
