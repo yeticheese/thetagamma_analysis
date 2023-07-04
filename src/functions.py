@@ -87,8 +87,8 @@ def extrema(x):
     return zero_xs, troughs, peaks
 
 
-def get_cycles_data(x, rem_states, s_rate, theta_range=(5, 12)):
-    consecutive_rem_states = get_rem_states(rem_states, s_rate)
+def get_cycles_data(x, rem_states, sample_rate, theta_range=(5, 12)):
+    consecutive_rem_states = get_rem_states(rem_states, sample_rate)
     rem_imf = []
     rem_mask_freq = []
     instantaneous_phase = []
@@ -110,9 +110,9 @@ def get_cycles_data(x, rem_states, s_rate, theta_range=(5, 12)):
         signal = x[start:end]
         imf, mask_freq = sift.iterated_mask_sift(signal,
                                                  mask_0='zc',
-                                                 sample_rate=s_rate,
+                                                 sample_rate=sample_rate,
                                                  ret_mask_freq=True)
-        IP, IF, IA = spectra.frequency_transform(imf, s_rate, 'nht')
+        IP, IF, IA = spectra.frequency_transform(imf, sample_rate, 'nht')
         sub_theta, theta, _ = tg_split(mask_freq, theta_range)
 
         rem_imf.append(imf)
@@ -135,19 +135,24 @@ def get_cycles_data(x, rem_states, s_rate, theta_range=(5, 12)):
         peaks = np.append(peaks, peak + start)
         theta_peak_sig = np.append(theta_peak_sig, theta_sig[peak])
 
-    min_peak_amp = 2*sub_theta_sig.std()
+    min_peak_amp = 2 * sub_theta_sig.std()
     peak_mask = theta_peak_sig > min_peak_amp
 
     upper_diff = np.floor(1000 / np.min(theta_range))
     lower_diff = np.floor(1000 / np.max(theta_range))
-    diff_mask = np.logical_and(np.diff(troughs)*(1000/s_rate) > lower_diff,
-                               np.diff(troughs)*(1000/s_rate) <= upper_diff).reshape(-1,)
+    diff_mask = np.logical_and(np.diff(troughs) * (1000 / sample_rate) > lower_diff,
+                               np.diff(troughs) * (1000 / sample_rate) <= upper_diff).reshape(-1, )
 
     extrema_mask = np.logical_and(diff_mask, peak_mask)
     troughs = troughs[extrema_mask]
     peaks = peaks[extrema_mask]
     zero_xs = zero_xs[extrema_mask]
 
+    cycles = np.empty((troughs.shape[0], 5)).astype(int)
+    cycles[:, [0, -1]] = troughs
+    cycles[:, [1, -2]] = zero_xs
+    cycles[:, 2] = peaks
+    cycles_mask = np.empty((troughs.shape[0],)).astype(bool)
     for j, rem in enumerate(rem_dict.values()):
         rem['start-end'] = consecutive_rem_states[j]
         rem['IMFs'] = rem_imf[j]
@@ -155,8 +160,12 @@ def get_cycles_data(x, rem_states, s_rate, theta_range=(5, 12)):
         rem['Instantaneous Phases'] = instantaneous_phase[j]
         rem['Instantaneous Frequencies'] = instantaneous_freq[j]
         rem['Instantaneous Amplitudes'] = instantaneous_amp[j]
-        rem['Zero Crossings'] = zero_xs[
-            (zero_xs >= consecutive_rem_states[j, 0]) & (zero_xs <= consecutive_rem_states[j, 1])]
-        rem['Troughs'] = troughs[(troughs >= consecutive_rem_states[j, 0]) & (troughs <= consecutive_rem_states[j, 1])]
-        rem['Peaks'] = peaks[(peaks >= consecutive_rem_states[j, 0]) & (peaks <= consecutive_rem_states[j, 1])]
+        rem_zx = (zero_xs[:, 0] > int(consecutive_rem_states[j, 0])) & (
+                    zero_xs[:, 1] < int(consecutive_rem_states[j, 1]))
+        rem_troughs = (troughs[:, 0] >= int(consecutive_rem_states[j, 0])) & (
+                    troughs[:, 1] <= int(consecutive_rem_states[j, 1]))
+        rem_peaks = (peaks > int(consecutive_rem_states[j, 0])) & (peaks < int(consecutive_rem_states[j, 1]))
+        cycles_mask = np.logical_and(np.logical_and(rem_troughs, rem_zx), rem_peaks, out=cycles_mask)
+        rem_cycles = cycles[cycles_mask]
+        rem['Cycles'] = rem_cycles
     return rem_dict

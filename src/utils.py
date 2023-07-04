@@ -4,6 +4,8 @@ import re
 import itertools
 import scipy.io as sio
 import inspect
+import h5py
+import numpy as np
 
 
 def load_config(config_path):
@@ -82,13 +84,42 @@ def process_functions(*functions, **kwargs):
         kwargs['output_data'] = func(**filtered_kwargs)
 
 
-def dict_write(rem_dict, header_dict, write_filename):
-    rem_record = header_dict
-    rem_record.update(rem_dict)
-    sio.savemat(f'{write_filename}', rem_record)
+def write_dict_to_hdf5(file, data, parent_key=''):
+    for key, value in data.items():
+        current_key = f'{parent_key}/{key}' if parent_key else key
+
+        if isinstance(value, dict):
+            # If the value is a dictionary, create a new group in the HDF5 file
+            group = file.create_group(current_key)
+            print(group.name)
+            write_dict_to_hdf5(file, value, parent_key=current_key)
+        else:
+            # If the value is not a dictionary, write it as a dataset in the HDF5 file
+            if isinstance(value, np.ndarray):
+                # If the value is a NumPy array, convert it to a dataset
+                file.create_dataset(current_key, data=value)
+            else:
+                # If the value is a scalar or list, convert it to a dataset
+                file[current_key] = value
 
 
-# def dict_walk(file_dict, folder_root, func, **kwargs):
+def read_hdf5_to_dict(write_filename):
+    def traverse_hdf5_group(group):
+        result = {}
+        for key, item in group.items():
+            if isinstance(item, h5py.Group):
+                result[key] = traverse_hdf5_group(item)
+            elif isinstance(item, h5py.Dataset):
+                if isinstance(item[()], np.ndarray):
+                    result[key] = np.array(item[()])
+                else:
+                    result[key] = item[()].decode()
+        return result
+
+    with h5py.File(write_filename, 'r') as file:
+        return traverse_hdf5_group(file)
+
+
 def dict_walk(file_dict, folder_root, *functions, **kwargs):
     for rat, day_trial_dict in zip(file_dict.keys(), file_dict.values()):
         # Get the last sub-dictionary in the current sub-dictionary
@@ -120,12 +151,13 @@ def dict_walk(file_dict, folder_root, *functions, **kwargs):
                     print("Filename already exists")
                     continue
                 else:
-                    header_dict = {'header_info': {'rat': last_dict['rat'],
-                                                   'study_day': last_dict['study_day'],
-                                                   'condition': last_dict['condition'],
-                                                   'trial': last_dict['trial']}}
-                    kwargs.update({'x': HPC['HPC'],
-                                   'rem_states': states['states'],
-                                   'header_dict': header_dict,
-                                   'write_filename': write_filename})
-                    process_functions(*functions, **kwargs)
+                    header_dict = {'header_info': {'rat': str(last_dict['rat']),
+                                                   'study_day': str(last_dict['study_day']),
+                                                   'condition': str(last_dict['condition']),
+                                                   'trial': str(last_dict['trial'])}}
+
+                kwargs.update({'x': HPC['HPC'],
+                               'rem_states': states['states'],
+                               'header_dict': header_dict,
+                               'write_filename': write_filename})
+                process_functions(*functions, **kwargs)
