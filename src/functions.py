@@ -1,7 +1,12 @@
-import numpy as np
 import emd.sift as sift
 import emd.spectra as spectra
-import scipy
+import numpy as np
+import pingouin as pg
+import sails
+from scipy.signal import convolve2d
+from scipy.stats import zscore, binned_statistic
+from scipy.ndimage import center_of_mass
+from skimage.feature import peak_local_max
 
 
 def get_rem_states(states, sample_rate):
@@ -21,14 +26,9 @@ def get_rem_states(states, sample_rate):
     return consecutive_rem_states
 
 
-def morlet_wt(x, s_rate=2500, freq_range=(1, 200), tcenter=4, n=5):
-    freq = np.arange(np.min(freq_range), np.max(freq_range), 1)
-    wavelet_transform = np.zeros((len(freq), len(x)), dtype=complex)
-    for i, freq in enumerate(freq):
-        h = (n * (2 * np.log(2)) ** 0.5) / (np.pi * freq)
-        tcenter = np.arange(len(x)) / s_rate - 0.5 * len(x) / s_rate
-        wavelet = np.exp(1j * 2 * np.pi * freq * tcenter) * np.exp((-4 * np.log(2) * tcenter ** 2) / h ** 2)
-        wavelet_transform[i, :] = np.convolve(x.T, wavelet, mode='same')
+def morlet_wt(x, sample_rate, frequencies=np.arange(1, 200, 1), n=5, mode='complex'):
+    wavelet_transform = sails.wavelet.morlet(x, freqs=frequencies, sample_rate=sample_rate, ncycles=n,
+                                             ret_mode=mode, normalise=None)
     return wavelet_transform
 
 
@@ -167,13 +167,13 @@ def get_cycles_data(x, rem_states, sample_rate, theta_range=(5, 12)):
 def bin_tf_to_fpp(x, power, bin_count):
     if x.ndim == 1:  # Handle the case when x is of size (2)
         bin_ranges = np.arange(x[0], x[1], 1)
-        fpp = scipy.stats.binned_statistic(bin_ranges, power[:, x[0]:x[1]], 'mean', bins=bin_count)[0]
+        fpp = binned_statistic(bin_ranges, power[:, x[0]:x[1]], 'mean', bins=bin_count)[0]
         fpp = np.expand_dims(fpp, axis=0)  # Add an extra dimension to match the desired output shape
     elif x.ndim == 2:  # Handle the case when x is of size (n, 2)
         fpp = []
         for i in range(x.shape[0]):
             bin_ranges = np.arange(x[i, 0], x[i, 1], 1)
-            fpp_row = scipy.stats.binned_statistic(bin_ranges, power[:, x[i, 0]:x[i, 1]], 'mean', bins=bin_count)[0]
+            fpp_row = binned_statistic(bin_ranges, power[:, x[i, 0]:x[i, 1]], 'mean', bins=bin_count)[0]
             fpp.append(fpp_row)
         fpp = np.array(fpp)
     else:
@@ -182,23 +182,167 @@ def bin_tf_to_fpp(x, power, bin_count):
     return fpp
 
 
-def calculate_cog(frequencies, angles, amplitudes):
+def calculate_cog(frequencies, angles, amplitudes, ratio):
     angles = np.deg2rad(angles)
+    cog = np.empty((0, 2))
     if amplitudes.ndim == 2:
         numerator = np.sum(frequencies * np.sum(amplitudes, axis=1))
         denominator = np.sum(amplitudes)
         cog_f = numerator / denominator
-        cog_ph = np.rad2deg(pg.circ_mean(angles, w=np.sum(amplitudes, axis=0)))
+        floor = np.floor(cog_f).astype(int) - frequencies[0]
+        ceil = np.ceil(cog_f).astype(int) - frequencies[0]
+        new_fpp = np.where(amplitudes >= np.max(amplitudes[[floor, ceil], :]) * ratio, amplitudes, 0)
+        cog_ph = np.rad2deg(pg.circ_mean(angles, w=np.sum(new_fpp, axis=0)))
         cog = np.array([cog_f, cog_ph])
     elif amplitudes.ndim == 3:
-        cog = []
-        numerator = np.sum(amplitudes, axis=2)
+        indices_to_subset = np.empty((amplitudes.shape[0], 2)).astype(int)
+        cog = np.empty((amplitudes.shape[0], 2))
+        numerator = np.sum(frequencies * np.sum(amplitudes, axis=2), axis=1)
         denominator = np.sum(amplitudes, axis=(1, 2))
-        circ_weights = np.sum(amplitudes, axis=1)
-        for i in range(amplitudes.shape[0]):
-            cog_f = np.sum(frequencies * numerator[i]) / denominator[i]
-            cog_ph = np.rad2deg(pg.circ_mean(angles, w=circ_weights[i]))
-            cog_cycle = [cog_f, cog_ph]
-            cog.append(cog_cycle)
-        cog = np.array(cog)
+        cog_f = (numerator / denominator)
+        vectorized_floor = np.vectorize(np.floor)
+        vectorized_ceil = np.vectorize(np.ceil)
+        indices_to_subset[:, 0] = vectorized_floor(cog_f) - frequencies[0]
+        indices_to_subset[:, 1] = vectorized_ceil(cog_f) - frequencies[0]
+        max_amps = np.max(amplitudes[np.arange(amplitudes.shape[0])[:, np.newaxis], indices_to_subset, :], axis=(1, 2))
+        print(max_amps.shape)
+        for i, max_amp in enumerate(max_amps):
+            new_fpp = np.where(amplitudes[i] >= max_amp * ratio, amplitudes[i], 0)
+            cog[i, 1] = np.rad2deg(pg.circ_mean(angles, w=np.sum(new_fpp, axis=0)))
+        cog[:, 0] = cog_f
     return cog
+
+
+def boxcar_smooth(x, boxcar_window):
+    if x.ndim == 1:
+        if boxcar_window % 2 == 0:
+            boxcar_window += 1
+        window = np.ones((1, boxcar_window)) / boxcar_window
+        x_spectrum = np.convolve(x, window, mode='same')
+    else:
+        bool_window = np.where(~boxcar_window % 2 == 0, boxcar_window, boxcar_window + 1)
+        window_t = np.ones((1, bool_window[0])) / bool_window[0]
+        window_f = np.ones((1, bool_window[1])) / bool_window[1]
+        x_spectrum_t = convolve2d(x, window_t, mode='same')
+        x_spectrum = convolve2d(x_spectrum_t, window_f.T, mode='same')
+
+    return x_spectrum
+
+
+def peak_cog(frequencies, angles, amplitudes, ratio):
+    def nearest_peaks(frequency, angle, amplitude, ratio):
+        peak_indices = peak_local_max(amplitude, min_distance=1, threshold_abs=0)
+        cog_f = calculate_cog(frequency, angle, amplitude, ratio)
+
+        if peak_indices.shape[0] == 0:
+            cog_peak = cog_f
+        else:
+            cog_fx = np.array([cog_f[0], cog_f[0] * np.cos(np.deg2rad(cog_f[1] - angle[0])),
+                               cog_f[0] * np.sin(np.deg2rad(cog_f[1] - angle[0]))])
+            peak_loc = peak_loc = np.empty((peak_indices.shape[0], 4))
+            peak_loc[:, [0, 1]] = np.array([frequency[peak_indices.T[0]], angle[peak_indices.T[1]]]).T
+            peak_loc[:, 2] = peak_loc[:, 0] * np.cos(np.deg2rad(peak_loc[:, 1] - angle[0]))
+            peak_loc[:, 3] = peak_loc[:, 0] * np.sin(np.deg2rad(peak_loc[:, 1] - angle[0]))
+            peak_loc = peak_loc[:, [0, 2, 3]]
+            distances = np.abs(peak_loc - cog_fx)
+
+            cog_pos = peak_indices[np.argmin(np.linalg.norm(distances, axis=1))]
+
+            cog_peak = np.array([frequency[cog_pos[0]], angle[cog_pos[1]]])
+
+        return cog_peak
+
+    if amplitudes.ndim == 2:
+        cog = nearest_peaks(frequencies, angles, amplitudes, ratio)
+    elif amplitudes.ndim == 3:
+        cog = np.empty((amplitudes.shape[0], 2))
+        for i, fpp in enumerate(amplitudes):
+            cog[i] = nearest_peaks(frequencies, angles, fpp, ratio)
+    return cog
+
+
+def max_peaks(amplitudes):
+    new_fpp = np.zeros(amplitudes.shape)
+    if amplitudes.ndim == 2:
+        peak_indices = peak_local_max(amplitudes, min_distance=1, threshold_abs=0)
+        if peak_indices.shape[0] == 0:
+            new_fpp = np.where(amplitudes > 0, amplitudes, 0)
+        else:
+            new_fpp[peak_indices.T[0], peak_indices.T[1]] = amplitudes[peak_indices.T[0], peak_indices.T[1]]
+    elif amplitudes.ndim == 3:
+        for i, fpp in enumerate(amplitudes):
+            peak_indices = peak_local_max(fpp, min_distance=1, threshold_abs=0)
+            if peak_indices.shape[0] == 0:
+                new_fpp[i] = np.where(fpp > 0, fpp, 0)
+            else:
+                new_fpp[i, peak_indices.T[0], peak_indices.T[1]] = fpp[peak_indices.T[0], peak_indices.T[1]]
+    return new_fpp
+
+
+def boundary_peaks(amplitudes):
+    adjusted_fpp = np.zeros(amplitudes.shape)
+    if amplitudes.ndim == 2:
+        peak_indices = peak_local_max(amplitudes, min_distance=1, threshold_abs=0)
+        if peak_indices.shape[0] == 0:
+            adjusted_fpp = np.where(amplitudes > 0, amplitudes, 0)
+        else:
+            new_fpp = amplitudes[peak_indices.T[0], peak_indices.T[1]]
+            maximum = np.max(new_fpp)
+            minimum = np.min(new_fpp)
+            adjusted_fpp = np.where((amplitudes <= maximum) & (amplitudes >= 0.95*minimum), amplitudes, 0)
+    elif amplitudes.ndim == 3:
+        for i, fpp in enumerate(amplitudes):
+            peak_indices = peak_local_max(fpp, min_distance=1, threshold_abs=0)
+            print(peak_indices.shape)
+            if peak_indices.shape[0] == 0:
+                adjusted_fpp[i] = np.where(fpp > 0, fpp, 0)
+            else:
+                maximum = np.max(fpp[peak_indices.T[0], peak_indices.T[1]])
+                minimum = np.min(fpp[peak_indices.T[0], peak_indices.T[1]])
+                adjusted_fpp[i] = np.where((fpp <= maximum) & (fpp >= 0.95*minimum), fpp, 0)
+    return adjusted_fpp
+
+
+def rem_fpp_gen(rem_dict, x, sample_rate, frequencies, angles, ratio, boxcar_window=None, norm='', fpp_method='',
+                cog_method=''):
+    x = np.squeeze(x)
+    cycles_dict = rem_dict
+    rem_dict = {}
+    sub_dict = rem_dict
+    for key, value in cycles_dict.items():
+        print(key)
+        if 'Cycles' in value.keys():
+            sub_dict.setdefault(key, {})
+            t = value['start-end'].astype(int)
+            print(t, t[0], t[1])
+            sig = x[t[0]:t[1]]
+            print(sig.shape)
+            power = morlet_wt(sig, sample_rate, frequencies, mode='power')
+            cycles = value['Cycles'][:, [0, -1]] - t[0]
+            if boxcar_window is not None:
+                power = boxcar_smooth(power, boxcar_window)
+            if norm == 'simple_x':
+                power = power / np.sum(power, axis=0)
+            elif norm == 'simple_y':
+                power = power / np.sum(power, axis=1)[:, np.newaxis]
+            elif norm == 'zscore_y':
+                power = zscore(power, axis=0)
+            elif norm == 'zscore_x':
+                power = zscore(power, axis=1)
+            fpp_plots = bin_tf_to_fpp(cycles, power, 19)
+            sub_dict[key]['FPP_cycles'] = fpp_plots
+            if fpp_method == 'max_peaks':
+                fpp_plots = max_peaks(fpp_plots)
+                print(fpp_plots.shape)
+            elif fpp_method == 'boundary_peaks':
+                fpp_plots = boundary_peaks(fpp_plots)
+            if cog_method == 'nearest':
+                cog = peak_cog(frequencies, angles, fpp_plots,ratio)
+            else:
+                cog = calculate_cog(frequencies, angles, fpp_plots, ratio)
+            sub_dict[key]['CoG'] = cog
+        else:
+            continue
+    return rem_dict
+
+
