@@ -6,6 +6,8 @@ import scipy.io as sio
 import inspect
 import h5py
 import numpy as np
+from .logger import *
+from pandas import read_csv
 
 
 def load_config(config_path):
@@ -46,15 +48,19 @@ def get_files_dict(file_path):
             continue
 
         file_dir_parts = root.split(os.sep)[7:]
-        for file in files[1:]:
+        for file in files:
             state = bool(re.search('states.*.mat', file))
             hpc = bool(re.search(r"\bHPC.*.mat", file))
             if state or hpc:
                 file_dir_parts.append(file)
 
         sub_dict = file_dict
-        for part in file_dir_parts[:-2]:
+        print(f'--{file_dir_parts}')
+        print(f'--{file_dir_parts[:-2]}')
+        for part in file_dir_parts[:3]:
+            print(f'---{part}')
             sub_dict = sub_dict.setdefault(part, {})
+            # print(sub_dict)
 
         sub_dict['rat'] = int(re.findall('\d', rat_conditions[0])[0])
         sub_dict['study_day'] = int(re.findall('\d\d|\d', rat_conditions[1])[0])
@@ -62,7 +68,6 @@ def get_files_dict(file_path):
         sub_dict['trial'] = rat_conditions[3]
         sub_dict['HPC'] = file_dir_parts[-1]
         sub_dict['states'] = file_dir_parts[-2]
-
     return file_dict
 
 
@@ -79,7 +84,6 @@ def process_functions(*functions, **kwargs):
             kwargs[str(next(iter(params)))] = kwargs['output_data']
         # Get the remaining keyword arguments
         filtered_kwargs = {k: v for k, v in kwargs.items() if k in params}
-        print(filtered_kwargs)
         # # Call the function with the positional arguments and filtered kwargs
         kwargs['output_data'] = func(**filtered_kwargs)
 
@@ -103,7 +107,7 @@ def write_dict_to_hdf5(file, data, parent_key=''):
                 file[current_key] = value
 
 
-def read_hdf5_to_dict(write_filename):
+def read_hdf5_to_dict(read_filename):
     def traverse_hdf5_group(group):
         result = {}
         for key, item in group.items():
@@ -112,22 +116,37 @@ def read_hdf5_to_dict(write_filename):
             elif isinstance(item, h5py.Dataset):
                 if isinstance(item[()], np.ndarray):
                     result[key] = np.array(item[()])
+                elif isinstance(item[()], np.int32):
+                    result[key] = int(item[()])
                 else:
                     result[key] = item[()].decode()
         return result
 
-    with h5py.File(write_filename, 'r') as file:
+    with h5py.File(read_filename, 'r') as file:
         return traverse_hdf5_group(file)
 
 
-def dict_walk(file_dict, folder_root, *functions, **kwargs):
+def dict_walk(file_dict, folder_root, read_suffix='', write_suffix='', *functions, **kwargs):
+    logger_file = r'{folder_root}\log.txt'
+    logger_file_path = logger_file.format(folder_root=folder_root)
+    logger = setup_logger(f'{logger_file_path}')
+    CBD_file = r'{folder_root}\CBD_log.csv'
+    CBD_logger_file_path = CBD_file.format(folder_root=folder_root)
+    cbd_df = read_csv(f'{CBD_logger_file_path}')
     for rat, day_trial_dict in zip(file_dict.keys(), file_dict.values()):
         # Get the last sub-dictionary in the current sub-dictionary
         for day_trial_type, sleep_type_dict in zip(day_trial_dict.keys(), day_trial_dict.values()):
             for sleep_type, last_dict in zip(sleep_type_dict.keys(), sleep_type_dict.values()):
                 file_path = r'{folder_root}\{rat}\{day_trial_type}\{sleep_type}\{state}'
                 filename_struct = r'{folder_root}\{rat}\{day_trial_type}\{sleep_type}\Rat{rat}_SD{study_day}_{' \
-                                  r'condition}_{trial}'
+                                  r'condition}_{treatment}_{trial}{suffix}'
+                query_string = f"rat == {last_dict['rat']} and study_day == {last_dict['study_day']} and condition ==" \
+                               f"'{last_dict['condition']}'"
+                cbd_bool = cbd_df.query(query_string)['treatment']
+                if bool(cbd_bool.iloc[0]):
+                    treatment = 'CBD'
+                else:
+                    treatment = 'VEH'
                 states_file_path = file_path.format(folder_root=folder_root,
                                                     rat=rat,
                                                     day_trial_type=day_trial_type,
@@ -140,24 +159,50 @@ def dict_walk(file_dict, folder_root, *functions, **kwargs):
                                                  state=last_dict['HPC'])
                 states = sio.loadmat(f'{states_file_path}')
                 HPC = sio.loadmat(f'{HPC_file_path}')
+                read_filename = filename_struct.format(folder_root=folder_root,
+                                                       rat=rat,
+                                                       day_trial_type=day_trial_type,
+                                                       sleep_type=sleep_type,
+                                                       study_day=last_dict['study_day'],
+                                                       condition=last_dict['condition'],
+                                                       treatment=treatment,
+                                                       trial=last_dict['trial'],
+                                                       suffix=read_suffix)
                 write_filename = filename_struct.format(folder_root=folder_root,
                                                         rat=rat,
                                                         day_trial_type=day_trial_type,
                                                         sleep_type=sleep_type,
                                                         study_day=last_dict['study_day'],
                                                         condition=last_dict['condition'],
-                                                        trial=last_dict['trial'])
+                                                        treatment=treatment,
+                                                        trial=last_dict['trial'],
+                                                        suffix=write_suffix)
                 if os.path.exists(write_filename):
                     print("Filename already exists")
                     continue
                 else:
-                    header_dict = {'header_info': {'rat': str(last_dict['rat']),
-                                                   'study_day': str(last_dict['study_day']),
+                    header_dict = {'header_info': {'rat': int(last_dict['rat']),
+                                                   'study_day': int(last_dict['study_day']),
                                                    'condition': str(last_dict['condition']),
-                                                   'trial': str(last_dict['trial'])}}
-
+                                                   'trial': str(last_dict['trial']),
+                                                   'treatment': treatment}}
+                print(header_dict)
                 kwargs.update({'x': HPC['HPC'],
                                'rem_states': states['states'],
                                'header_dict': header_dict,
-                               'write_filename': write_filename})
-                process_functions(*functions, **kwargs)
+                               'write_filename': write_filename,
+                               'read_filename': read_filename})
+                error_file_loc = file_path.format(folder_root=folder_root,
+                                                  rat=rat,
+                                                  day_trial_type=day_trial_type,
+                                                  sleep_type=sleep_type,
+                                                  state=last_dict['states'])
+
+                # process_functions(*functions, **kwargs)
+                try:
+                    process_functions(*functions, **kwargs)
+                except Exception as e:
+                    # Log the error
+                    logger.error(f'Error processing item: {error_file_loc}. {e}')
+
+                    continue
