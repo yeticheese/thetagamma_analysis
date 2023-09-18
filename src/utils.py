@@ -44,6 +44,7 @@ def get_files_dict(file_path):
 
     for root, dirs, files in walker:
         rat_conditions = re.findall('Rat\d|HC|OR|OD|presleep|SD\d\d|SD\d|posttrial\d', root)
+        print(rat_conditions)
         if len(rat_conditions) < 4:
             continue
 
@@ -72,7 +73,18 @@ def get_files_dict(file_path):
 
 
 def process_functions(*functions, **kwargs):
-    kwargs['output_data'] = None
+    """
+       Process a series of functions sequentially, managing inputs and outputs dynamically.
+
+       Parameters:
+       *functions: Variable-length positional argument. A series of functions to process sequentially.
+       **kwargs: Keyword argument dictionary with configuration options.
+           - 'output_data' (optional): Data passed between functions. Initially None.
+
+       Returns:
+       The result of the last function call in the chain.
+       """
+    kwargs.setdefault('output_data', None)
     for func in functions:
         # Get the function signature
         signature = inspect.signature(func)
@@ -89,6 +101,23 @@ def process_functions(*functions, **kwargs):
 
 
 def write_dict_to_hdf5(file, data, parent_key=''):
+    """
+    Recursively write a dictionary structure to an HDF5 file.
+
+    Parameters:
+    file (h5py.File or h5py.Group): The HDF5 file or group where data will be written.
+    data (dict): The dictionary to be written to the HDF5 file.
+    parent_key (str, optional): The parent key under which the data will be stored. Default is an empty string.
+
+    Returns:
+    None
+
+    Notes:
+    - This function recursively iterates through the dictionary structure and writes it to the HDF5 file.
+    - If a dictionary value is encountered, it creates a new group in the HDF5 file.
+    - If a NumPy array is encountered, it is written as a dataset.
+    - If a scalar or list is encountered, it is converted to a dataset and stored.
+    """
     for key, value in data.items():
         current_key = f'{parent_key}/{key}' if parent_key else key
 
@@ -108,6 +137,21 @@ def write_dict_to_hdf5(file, data, parent_key=''):
 
 
 def read_hdf5_to_dict(read_filename):
+    """
+    Recursively read data from an HDF5 file into a dictionary structure.
+
+    Parameters:
+    read_filename (str): The name of the HDF5 file to be read.
+
+    Returns:
+    dict: A dictionary containing the data read from the HDF5 file.
+
+    Notes:
+    - This function recursively traverses the HDF5 file and reads data into a dictionary structure.
+    - Groups in the HDF5 file are represented as nested dictionaries.
+    - Datasets in the HDF5 file are represented as keys with associated data in the dictionary.
+    - NumPy arrays, integers, and string values are appropriately converted and stored in the dictionary.
+    """
     def traverse_hdf5_group(group):
         result = {}
         for key, item in group.items():
@@ -127,6 +171,25 @@ def read_hdf5_to_dict(read_filename):
 
 
 def dict_walk(file_dict, folder_root, read_suffix='', write_suffix='', *functions, **kwargs):
+    """
+        Walk through a nested dictionary structure and process data using a series of functions.
+
+        Parameters:
+        file_dict (dict): A nested dictionary structure containing file information.
+        folder_root (str): The root folder where data files are located.
+        read_suffix (str, optional): Suffix to be added to read filenames. Default is an empty string.
+        write_suffix (str, optional): Suffix to be added to write filenames. Default is an empty string.
+        *functions: Variable-length positional argument. A series of functions to process data.
+        **kwargs: Keyword argument dictionary with initial and additional configuration options.
+
+        Returns:
+        None
+
+        Notes:
+        - This function walks through a nested dictionary structure and processes data using a series of functions.
+        - It constructs filenames, loads data, and passes it to the specified functions.
+        - If an error occurs during processing, it logs the error and continues processing other items.
+        """
     logger_file = r'{folder_root}\log.txt'
     logger_file_path = logger_file.format(folder_root=folder_root)
     logger = setup_logger(f'{logger_file_path}')
