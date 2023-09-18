@@ -289,7 +289,7 @@ def boundary_peaks(amplitudes):
             new_fpp = amplitudes[peak_indices.T[0], peak_indices.T[1]]
             maximum = np.max(new_fpp)
             minimum = np.min(new_fpp)
-            adjusted_fpp = np.where((amplitudes <= maximum) & (amplitudes >= 0.95*minimum), amplitudes, 0)
+            adjusted_fpp = np.where((amplitudes <= maximum) & (amplitudes >= 0.95 * minimum), amplitudes, 0)
     elif amplitudes.ndim == 3:
         for i, fpp in enumerate(amplitudes):
             peak_indices = peak_local_max(fpp, min_distance=1, threshold_abs=0)
@@ -299,7 +299,7 @@ def boundary_peaks(amplitudes):
             else:
                 maximum = np.max(fpp[peak_indices.T[0], peak_indices.T[1]])
                 minimum = np.min(fpp[peak_indices.T[0], peak_indices.T[1]])
-                adjusted_fpp[i] = np.where((fpp <= maximum) & (fpp >= 0.95*minimum), fpp, 0)
+                adjusted_fpp[i] = np.where((fpp <= maximum) & (fpp >= 0.95 * minimum), fpp, 0)
     return adjusted_fpp
 
 
@@ -337,12 +337,10 @@ def rem_fpp_gen(rem_dict, x, sample_rate, frequencies, angles, ratio, boxcar_win
             elif fpp_method == 'boundary_peaks':
                 fpp_plots = boundary_peaks(fpp_plots)
             if cog_method == 'nearest':
-                cog = peak_cog(frequencies, angles, fpp_plots,ratio)
+                cog = peak_cog(frequencies, angles, fpp_plots, ratio)
             else:
                 cog = calculate_cog(frequencies, angles, fpp_plots, ratio)
             sub_dict[key]['CoG'] = cog
         else:
             continue
     return rem_dict
-
-

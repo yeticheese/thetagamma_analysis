@@ -44,7 +44,6 @@ def get_files_dict(file_path):
 
     for root, dirs, files in walker:
         rat_conditions = re.findall('Rat\d|HC|OR|OD|presleep|SD\d\d|SD\d|posttrial\d', root)
-        print(rat_conditions)
         if len(rat_conditions) < 4:
             continue
 
@@ -56,10 +55,7 @@ def get_files_dict(file_path):
                 file_dir_parts.append(file)
 
         sub_dict = file_dict
-        print(f'--{file_dir_parts}')
-        print(f'--{file_dir_parts[:-2]}')
         for part in file_dir_parts[:3]:
-            print(f'---{part}')
             sub_dict = sub_dict.setdefault(part, {})
             # print(sub_dict)
 
