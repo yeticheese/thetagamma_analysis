@@ -20,7 +20,8 @@ def load_config(config_path):
 def get_files_dict(file_path):
     """
     Recursively navigates through a directory tree and generates a nested dictionary
-    representing the file structure, along with extracted information from the file paths.
+    representing the file structure maintained at the Genzel Lab Database,
+    along with extracted information from the file paths.
 
     Args:
         file_path (str): The path to the root directory.
