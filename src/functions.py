@@ -10,6 +10,21 @@ from skimage.feature import peak_local_max
 
 
 def get_rem_states(states, sample_rate):
+    """
+        Extract consecutive REM (Rapid Eye Movement) sleep states from a binary sleep state vector.
+
+        Parameters:
+        states (numpy.ndarray): A binary sleep state vector where 5 represents REM sleep and other values indicate non-REM.
+        sample_rate (int or float): The sampling rate of the data.
+
+        Returns:
+        numpy.ndarray: An array of consecutive REM sleep state intervals in seconds, represented as (start, end) pairs.
+
+        Notes:
+            - This function processes a binary sleep state vector and identifies consecutive REM sleep intervals.
+            - It calculates the start and end times of each REM state interval based on the provided sample rate.
+            - The resulting intervals are returned as a numpy array of (start, end) pairs in seconds.
+    """
     states = np.squeeze(states)
     rem_state_indices = np.where(states == 5)[0]
     rem_state_changes = np.diff(rem_state_indices)
@@ -27,12 +42,48 @@ def get_rem_states(states, sample_rate):
 
 
 def morlet_wt(x, sample_rate, frequencies=np.arange(1, 200, 1), n=5, mode='complex'):
+    """
+        Compute the Morlet Wavelet Transform of a signal.
+
+        Parameters:
+        x (numpy.ndarray): The input signal for which the Morlet Wavelet Transform is computed.
+        sample_rate (int or float): The sampling rate of the input signal.
+        frequencies (numpy.ndarray, optional): An array of frequencies at which to compute the wavelet transform.
+        Default is a range from 1 to 200 Hz with a step of 1 Hz.
+        n (int, optional): The number of cycles of the Morlet wavelet. Default is 5.
+        mode (str, optional): The return mode for the wavelet transform. Options are 'complex' (default), 'amplitude' and 'power'.
+
+        Returns:
+        numpy.ndarray: The Morlet Wavelet Transform of the input signal.
+
+        Notes:
+            - This function computes the Morlet Wavelet Transform of a given signal.
+            - The wavelet transform is computed at specified frequencies.
+            - The number of cycles for the Morlet wavelet can be adjusted using the 'n' parameter.
+            - The result can be returned in either complex or magnitude form, as specified by the 'mode' parameter.
+    """
     wavelet_transform = sails.wavelet.morlet(x, freqs=frequencies, sample_rate=sample_rate, ncycles=n,
                                              ret_mode=mode, normalise=None)
     return wavelet_transform
 
 
 def tg_split(mask_freq, theta_range=(5, 12)):
+    """
+        Split a frequency vector into sub-theta, theta, and supra-theta components.
+
+        Parameters:
+        mask_freq (numpy.ndarray): An array of frequency values.
+        theta_range (tuple, optional): A tuple defining the theta frequency range (lower, upper).
+            Default is (5, 12).
+
+        Returns:
+        tuple: A tuple containing boolean masks for sub-theta, theta, and supra-theta frequency components.
+
+        Notes:
+            - This function splits a frequency mask into three components based on a specified theta frequency range.
+            - The theta frequency range is defined by the 'theta_range' parameter.
+            - The resulting masks 'sub', 'theta', and 'supra' represent sub-theta, theta, and supra-theta frequency components.
+    """
     lower = np.min(theta_range)
     upper = np.max(theta_range)
     mask_index = np.logical_and(mask_freq >= lower, mask_freq < upper)
@@ -46,6 +97,19 @@ def tg_split(mask_freq, theta_range=(5, 12)):
 
 
 def zero_cross(x):
+    """
+        Find the indices of zero-crossings in a 1D signal.
+
+        Parameters:
+        x (numpy.ndarray): The input 1D signal.
+
+        Returns:
+        numpy.ndarray: An array of indices where zero-crossings occur in the input signal.
+
+        Notes:
+            - This function identifies the indices where zero-crossings occur in a given 1D signal.
+            - It detects both rising and falling zero-crossings.
+    """
     decay = np.logical_and((x > 0)[1:], ~(x > 0)[:-1]).nonzero()[0]
     rise = np.logical_and((x <= 0)[1:], ~(x <= 0)[:-1]).nonzero()[0]
     zero_xs = np.sort(np.append(rise, decay))
@@ -53,6 +117,24 @@ def zero_cross(x):
 
 
 def extrema(x):
+    """
+        Find extrema (peaks and troughs) in a 1D signal.
+
+        Parameters:
+        x (numpy.ndarray): The input 1D signal.
+
+        Returns:
+        tuple: A tuple containing:
+                - numpy.ndarray: Indices of zero-crossings in the input signal.
+                - numpy.ndarray: Indices of troughs in the input signal.
+                - numpy.ndarray: Indices of peaks in the input signal.
+
+        Notes:
+            - This function identifies and returns the indices of zero-crossings, troughs, and peaks in a given 1D signal.
+            - Zero-crossings are points where the signal crosses the zero axis.
+            - Troughs are local minima, and peaks are local maxima in the signal.
+    """
+
     zero_xs = zero_cross(x)
     peaks = np.empty((0,)).astype(int)
     troughs = np.empty((0,)).astype(int)
@@ -66,6 +148,22 @@ def extrema(x):
 
 
 def get_cycles_data(x, rem_states, sample_rate, theta_range=(5, 12)):
+    """
+        Creates a nested dictionary of each REM epoch with their respective signal metadata and cycles
+
+        Parameters:
+        x (numpy.ndarray):  1D raw input signal.
+        rem_states (numpy.ndarray): 1D states array
+        sample_rate (int or float):  The sampling rate of the input signal.
+        theta_range (tuple, optional): A tuple defining the theta frequency range (lower, upper).
+            Default is (5, 12).
+
+        Returns:
+            rem_dict (dict): A nested dictionary of REM epoch data
+
+        Notes:
+            -
+    """
     consecutive_rem_states = get_rem_states(rem_states, sample_rate)
     rem_imf = []
     rem_mask_freq = []
