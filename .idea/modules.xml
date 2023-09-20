@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/Theta-Gamma Analysis.iml" filepath="$PROJECT_DIR$/.idea/Theta-Gamma Analysis.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../Genzel_Lab_Projects/ThetaGammaAnalysis/.idea/ThetaGammaAnalysis.iml" filepath="$PROJECT_DIR$/../Genzel_Lab_Projects/ThetaGammaAnalysis/.idea/ThetaGammaAnalysis.iml" />
     </modules>
   </component>
 </project>
