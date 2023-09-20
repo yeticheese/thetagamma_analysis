@@ -162,7 +162,7 @@ def get_cycles_data(x, rem_states, sample_rate, theta_range=(5, 12)):
             rem_dict (dict): A nested dictionary of REM epoch data
 
         Notes:
-            -
+            - Creates a dictionary of emd
     """
     consecutive_rem_states = get_rem_states(rem_states, sample_rate)
     rem_imf = []
