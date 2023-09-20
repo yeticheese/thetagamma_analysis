@@ -5,6 +5,7 @@ def setup_logger(log_file):
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)
 
+
     # Create file handler which logs messages to the file
     file_handler = logging.FileHandler(log_file)
     file_handler.setLevel(logging.DEBUG)
