@@ -10,6 +10,21 @@ from skimage.feature import peak_local_max
 
 
 def get_rem_states(states, sample_rate):
+    """
+    Extract consecutive REM (Rapid Eye Movement) sleep states from a binary sleep state vector.
+
+    Parameters:
+    states (numpy.ndarray): A sleep state vector where 5 represents REM sleep and other values indicate non-REM.
+    sample_rate (int or float): The sampling rate of the data.
+
+    Returns:
+    numpy.ndarray: An array of consecutive REM sleep state intervals in seconds, represented as (start, end) pairs.
+
+    Notes:
+    - This function processes a binary sleep state vector and identifies consecutive REM sleep intervals.
+    - It calculates the start and end times of each REM state interval based on the provided sample rate.
+    - The resulting intervals are returned as a numpy array of (start, end) pairs in seconds.
+    """
     states = np.squeeze(states)
     rem_state_indices = np.where(states == 5)[0]
     rem_state_changes = np.diff(rem_state_indices)
@@ -27,12 +42,48 @@ def get_rem_states(states, sample_rate):
 
 
 def morlet_wt(x, sample_rate, frequencies=np.arange(1, 200, 1), n=5, mode='complex'):
+    """
+        Compute the Morlet Wavelet Transform of a signal.
+
+        Parameters:
+        x (numpy.ndarray): The input signal for which the Morlet Wavelet Transform is computed.
+        sample_rate (int or float): The sampling rate of the input signal.
+        frequencies (numpy.ndarray, optional): An array of frequencies at which to compute the wavelet transform.
+            Default is a range from 1 to 200 Hz with a step of 1 Hz.
+        n (int, optional): The number of cycles of the Morlet wavelet. Default is 5.
+        mode (str, optional): The return mode for the wavelet transform. Options are 'complex' (default),'amplitude', and 'power'.
+
+        Returns:
+        numpy.ndarray: The Morlet Wavelet Transform of the input signal.
+
+        Notes:
+        - This function computes the Morlet Wavelet Transform of a given signal.
+        - The wavelet transform is computed at specified frequencies.
+        - The number of cycles for the Morlet wavelet can be adjusted using the 'n' parameter.
+        - The result can be returned in either complex or magnitude form either as amplitude or power, as specified by the 'mode' parameter.
+        """
     wavelet_transform = sails.wavelet.morlet(x, freqs=frequencies, sample_rate=sample_rate, ncycles=n,
                                              ret_mode=mode, normalise=None)
     return wavelet_transform
 
 
 def tg_split(mask_freq, theta_range=(5, 12)):
+    """
+        Split a frequency vector into sub-theta, theta, and supra-theta components.
+
+        Parameters:
+        mask_freq (numpy.ndarray): A frequency vector or array of frequency values.
+        theta_range (tuple, optional): A tuple defining the theta frequency range (lower, upper).
+            Default is (5, 12).
+
+        Returns:
+        tuple: A tuple containing boolean masks for sub-theta, theta, and supra-theta frequency components.
+
+        Notes:
+        - This function splits a frequency mask into three components based on a specified theta frequency range.
+        - The theta frequency range is defined by the 'theta_range' parameter.
+        - The resulting masks 'sub', 'theta', and 'supra' represent sub-theta, theta, and supra-theta frequency components.
+        """
     lower = np.min(theta_range)
     upper = np.max(theta_range)
     mask_index = np.logical_and(mask_freq >= lower, mask_freq < upper)
@@ -46,6 +97,19 @@ def tg_split(mask_freq, theta_range=(5, 12)):
 
 
 def zero_cross(x):
+    """
+    Find the indices of zero-crossings in a 1D signal.
+
+    Parameters:
+    x (numpy.ndarray): The input 1D signal.
+
+    Returns:
+    numpy.ndarray: An array of indices where zero-crossings occur in the input signal.
+
+    Notes:
+    - This function identifies the indices where zero-crossings occur in a given 1D signal.
+    - It detects both rising and falling zero-crossings.
+    """
     decay = np.logical_and((x > 0)[1:], ~(x > 0)[:-1]).nonzero()[0]
     rise = np.logical_and((x <= 0)[1:], ~(x <= 0)[:-1]).nonzero()[0]
     zero_xs = np.sort(np.append(rise, decay))
@@ -53,6 +117,23 @@ def zero_cross(x):
 
 
 def extrema(x):
+    """
+    Find extrema (peaks, troughs) and zero crossings in a 1D signal.
+
+    Parameters:
+    x (numpy.ndarray): The input 1D signal.
+
+    Returns:
+    tuple: A tuple containing:
+        - numpy.ndarray: Indices of zero-crossings in the input signal.
+        - numpy.ndarray: Indices of troughs in the input signal.
+        - numpy.ndarray: Indices of peaks in the input signal.
+
+    Notes:
+    - This function identifies and returns the indices of zero-crossings, troughs, and peaks in a given 1D signal.
+    - Zero-crossings are points where the signal crosses the zero axis.
+    - Troughs are local minima, and peaks are local maxima in the signal.
+    """
     zero_xs = zero_cross(x)
     peaks = np.empty((0,)).astype(int)
     troughs = np.empty((0,)).astype(int)
@@ -66,7 +147,38 @@ def extrema(x):
 
 
 def get_cycles_data(x, rem_states, sample_rate, theta_range=(5, 12)):
+    """
+    Generate a nested dictionary containing extracted data and desired metadata of each REM epochs in the input sleep
+    signal
+
+    Parameters:
+    x (numpy.ndarray): The input 1D sleep signal.
+    rem_states (numpy.ndarray): A sleep state vector where 5 represents REM sleep and other values indicate non-REM.
+    sample_rate (int or float): The sampling rate of the data.
+    theta_range (tuple, optional): A tuple defining the theta frequency range (lower, upper).
+            Default is (5, 12).
+
+    Returns:
+    rem_dict: A nested dictionary of extracted signal data and signal source metadata
+
+    Notes:
+    - The dictionary output structure comes out as below:
+        |----REM 1
+        |    |----start_end:
+        |    |----IMFs:
+        |    |----IMF Frequencies:
+        |    |----Instantaneous Phases:
+        |    |----Instantaneous Frequencies:
+        |    |----Instantaneous Amplitudes:
+        |    |----Cycles:
+        |----REM (...)
+        |    |--------(...)
+    """
+
+    # Detect REM periods
     consecutive_rem_states = get_rem_states(rem_states, sample_rate)
+
+    # Intializing variables
     rem_imf = []
     rem_mask_freq = []
     instantaneous_phase = []
@@ -78,16 +190,23 @@ def get_cycles_data(x, rem_states, sample_rate, theta_range=(5, 12)):
     rem_dict = {}
     sub_dict = rem_dict
 
+    # Loop through each REM epoch
     for i, rem in enumerate(consecutive_rem_states, start=1):
         sub_dict.setdefault(f'REM {i}', {})
         start = int(rem[0])
         end = int(rem[1])
         signal = x[start:end]
+
+        # Extraction of IMFs and IMF Frequencies for current REM epoch
         imf, mask_freq = sift.iterated_mask_sift(signal,
                                                  mask_0='zc',
                                                  sample_rate=sample_rate,
                                                  ret_mask_freq=True)
+
+        # Extract Instantaneous Phase, Frequencies and Amplitudes of each IMF for current REM epoch
         IP, IF, IA = spectra.frequency_transform(imf, sample_rate, 'nht')
+
+        # Identify sub-theta, theta, and supra-theta frequencies
         sub_theta, theta, _ = tg_split(mask_freq, theta_range)
 
         rem_imf.append(imf)
@@ -96,11 +215,16 @@ def get_cycles_data(x, rem_states, sample_rate, theta_range=(5, 12)):
         instantaneous_freq.append(IF)
         instantaneous_amp.append(IA)
 
+        # Generate the theta signal to detect cycles
         theta_sig = np.sum(imf.T[theta], axis=0)
+
+        # Parse the sub-theta signal of all REM periods into one variable to set amplitude threshold
         sub_theta_sig = np.append(sub_theta_sig, np.sum(imf.T[sub_theta], axis=0))
 
+        # Generate extrema locations and zero crossing on the generated theta signal
         zero_x, trough, peak = extrema(np.sum(imf.T[theta], axis=0))
 
+        # Create the cycles array for the current REM epoch
         zero_x = np.vstack((zero_x[:-2:2], zero_x[1:-1:2], zero_x[2::2])).T
 
         size_adjust = np.min([trough.shape[0], zero_x.shape[0], peak.shape[0]])
@@ -136,20 +260,27 @@ def get_cycles_data(x, rem_states, sample_rate, theta_range=(5, 12)):
         else:
             cycle = np.hstack((cycle[:-1, 3].reshape((-1, 1)), cycle[1:, :-1]))
 
+        # Create an array of amplitudes at the peaks
         theta_peak_sig = np.append(theta_peak_sig, theta_sig[cycle[:, 2]])
         cycles = np.vstack((cycles, cycle + start))
 
+    # Set the minimum amplitude threshold and discard unsatisfactory theta peaks
     min_peak_amp = 2 * sub_theta_sig.std()
     peak_mask = theta_peak_sig > min_peak_amp
+
+    # Set the frequency threshold and discard and unsatisfactory difference between trough pairs
     upper_diff = np.floor(1000 / np.min(theta_range))
     lower_diff = np.floor(1000 / np.max(theta_range))
     diff_mask = np.logical_and(np.diff(cycles[:, [0, -1]], axis=1) * (1000 / sample_rate) > lower_diff,
                                np.diff(cycles[:, [0, -1]], axis=1) * (1000 / sample_rate) <= upper_diff)
 
+    # Create a boolean mask that satisfy both the frequency and amplitude threshold criteria
     extrema_mask = np.logical_and(np.squeeze(diff_mask), peak_mask)
 
+    # Pass the boolean mask on the cycles array to discard any unsatisfactory cycles
     cycles = cycles[extrema_mask]
 
+    # Place outputs in a nested dictionary
     for j, rem in enumerate(rem_dict.values()):
         rem['start-end'] = consecutive_rem_states[j]
         rem['IMFs'] = rem_imf[j]
@@ -161,10 +292,33 @@ def get_cycles_data(x, rem_states, sample_rate, theta_range=(5, 12)):
         cycles_mask = np.all(cycles_mask == True, axis=1)
         rem_cycles = cycles[cycles_mask]
         rem['Cycles'] = rem_cycles
+
     return rem_dict
 
 
 def bin_tf_to_fpp(x, power, bin_count):
+
+    """
+       Bin time-frequency power data into Frequency Phase Power (FPP) plots using specified time intervals of cycles.
+
+       Parameters:
+       x (numpy.ndarray): A 1D or 2D array specifying time intervals of cycles for binning.
+           - If 1D, it represents a single time interval [start, end].
+           - If 2D, it represents multiple time intervals, where each row is [start, end].
+       power (numpy.ndarray): The time-frequency power spectrum data to be binned.
+       bin_count (int): The number of bins to divide the time intervals into.
+
+       Returns:
+       fpp(numpy.ndarray): Returns FPP plots
+
+       Notes:
+       - This function takes time-frequency power data and divides it into FPP plots based on specified
+         time intervals.
+       - The 'x' parameter defines the time intervals, which can be a single interval or multiple intervals.
+       - The 'power' parameter is the time-frequency power data to be binned.
+       - The 'bin_count' parameter determines the number of bins within each time interval.
+       """
+
     if x.ndim == 1:  # Handle the case when x is of size (2)
         bin_ranges = np.arange(x[0], x[1], 1)
         fpp = binned_statistic(bin_ranges, power[:, x[0]:x[1]], 'mean', bins=bin_count)[0]
@@ -183,8 +337,29 @@ def bin_tf_to_fpp(x, power, bin_count):
 
 
 def calculate_cog(frequencies, angles, amplitudes, ratio):
+    """
+       Calculate the Center of Gravity (CoG) of an FPP plots of cycles.
+
+       Parameters:
+       frequencies (numpy.ndarray): An array of frequencies corresponding to FPP frequencies.
+       angles (numpy.ndarray): An array of phase angles in degrees.
+       amplitudes (numpy.ndarray): An array of magnitude values (can be power).
+           - If 2D, it represents magnitude values for multiple frequency bins.
+           - If 3D, it represents magnitude values for multiple frequency bins across multiple trials or subjects.
+       ratio (float): A ratio threshold for selecting magnitude values in the phase direction .
+
+       Returns:
+       numpy.ndarray: The Center of Gravity (CoG) for the FPP plot as frequency and phase.
+           - For 2D amplitudes: A 2D array containing CoG values for frequency and phase.
+           - For 3D amplitudes: A 2D array containing CoG values for frequency and phase cycle.
+
+       Notes:
+       - This function calculates the Center of Gravity (CoG) of the FPP plots.
+       - It can handle 2D or 3D amplitude arrays, representing either single or multiple cycles.
+       """
     angles = np.deg2rad(angles)
     cog = np.empty((0, 2))
+
     if amplitudes.ndim == 2:
         numerator = np.sum(frequencies * np.sum(amplitudes, axis=1))
         denominator = np.sum(amplitudes)
@@ -194,26 +369,48 @@ def calculate_cog(frequencies, angles, amplitudes, ratio):
         new_fpp = np.where(amplitudes >= np.max(amplitudes[[floor, ceil], :]) * ratio, amplitudes, 0)
         cog_ph = np.rad2deg(pg.circ_mean(angles, w=np.sum(new_fpp, axis=0)))
         cog = np.array([cog_f, cog_ph])
+
     elif amplitudes.ndim == 3:
         indices_to_subset = np.empty((amplitudes.shape[0], 2)).astype(int)
         cog = np.empty((amplitudes.shape[0], 2))
         numerator = np.sum(frequencies * np.sum(amplitudes, axis=2), axis=1)
         denominator = np.sum(amplitudes, axis=(1, 2))
         cog_f = (numerator / denominator)
+
         vectorized_floor = np.vectorize(np.floor)
         vectorized_ceil = np.vectorize(np.ceil)
         indices_to_subset[:, 0] = vectorized_floor(cog_f) - frequencies[0]
         indices_to_subset[:, 1] = vectorized_ceil(cog_f) - frequencies[0]
+
         max_amps = np.max(amplitudes[np.arange(amplitudes.shape[0])[:, np.newaxis], indices_to_subset, :], axis=(1, 2))
         print(max_amps.shape)
+
         for i, max_amp in enumerate(max_amps):
             new_fpp = np.where(amplitudes[i] >= max_amp * ratio, amplitudes[i], 0)
             cog[i, 1] = np.rad2deg(pg.circ_mean(angles, w=np.sum(new_fpp, axis=0)))
         cog[:, 0] = cog_f
+
     return cog
 
 
 def boxcar_smooth(x, boxcar_window):
+    """
+    Apply a boxcar smoothing filter to a 1D or 2D signal.
+
+    Parameters:
+    x (numpy.ndarray): The input signal to be smoothed.
+    boxcar_window (int or tuple): The size of the boxcar smoothing window.
+        - If int, it specifies the window size in both dimensions for a 2D signal.
+        - If tuple, it specifies the window size as (time_window, frequency_window) for a 2D signal.
+
+    Returns:
+    numpy.ndarray: The smoothed signal after applying the boxcar smoothing filter.
+
+    Notes:
+    - This function applies a boxcar smoothing filter to a 1D or 2D signal.
+    - The size of the smoothing window can be specified as an integer (square window) or a tuple (rectangular window).
+    - For 2D signals, the boxcar smoothing is applied in both the time and frequency dimensions.
+    """
     if x.ndim == 1:
         if boxcar_window % 2 == 0:
             boxcar_window += 1
@@ -230,6 +427,28 @@ def boxcar_smooth(x, boxcar_window):
 
 
 def peak_cog(frequencies, angles, amplitudes, ratio):
+    """
+       Calculate the Center of Gravity (CoG) and snap to the nearest peak in the FPP array.
+
+       Parameters:
+       frequencies (numpy.ndarray): An array of frequencies.
+       angles (numpy.ndarray): An array of phase angles in degrees.
+       amplitudes (numpy.ndarray): An array of magnitude values (can be power).
+           - If 2D, it represents magnitude values for multiple phase bins.
+           - If 3D, it represents magnitude values for multiple phase bins across multiple trials or subjects.
+       ratio (float): A ratio threshold for selecting magnitude values in the phase direction.
+
+       Returns:
+       numpy.ndarray: Snapped peaks of each FPP cycle .
+           - For 2D amplitudes: A 2D array containing CoG peaks for frequency and phase.
+           - For 3D amplitudes: A 2D array containing CoG peaks for frequency and phase for each cycle.
+
+       Notes:
+       - This function calculates the Center of Gravity (CoG) of the passed FPP cycles and their respective magnitude
+       peaks.
+       - The CoG is then shifted to the nearest peak of Euclidean distance treating frequency as linear and phase as
+       circular.
+       """
     def nearest_peaks(frequency, angle, amplitude, ratio):
         peak_indices = peak_local_max(amplitude, min_distance=1, threshold_abs=0)
         cog_f = calculate_cog(frequency, angle, amplitude, ratio)
@@ -262,6 +481,25 @@ def peak_cog(frequencies, angles, amplitudes, ratio):
 
 
 def max_peaks(amplitudes):
+    """
+    Extract maximum peaks from amplitude distributions.
+
+    Parameters:
+    amplitudes (numpy.ndarray): An array of magnitude values of FPP cycles, can be amplitude or power.
+        - If 2D, it represents magnitude values for multiple phase bins.
+        - If 3D, it represents magnitude values for multiple phase bins across multiple cycles.
+        - Magnitude values are only z-score normalized arrays from the original.
+
+    Returns:
+    numpy.ndarray: An array with maximum peaks extracted from the input magnitudes.
+        - For 2D amplitudes: A 2D array with peak values at the same positions as the input.
+        - For 3D amplitudes: A 3D array with peak values at the same positions as the input for each cycle.
+
+    Notes:
+    - This function extracts boundary values from FPP cycles.
+    - It can handle 2D or 3D FPP arrays, representing either single or multiple cycles.
+    - Peaks are extracted using the skimage `peak_local_max` function with specified parameters.
+    """
     new_fpp = np.zeros(amplitudes.shape)
     if amplitudes.ndim == 2:
         peak_indices = peak_local_max(amplitudes, min_distance=1, threshold_abs=0)
@@ -280,6 +518,26 @@ def max_peaks(amplitudes):
 
 
 def boundary_peaks(amplitudes):
+    """
+    Extract maximum peaks from amplitude distributions.
+
+    Parameters:
+    amplitudes (numpy.ndarray): An array of magnitude values of FPP cycles, can be amplitude or power.
+        - If 2D, it represents magnitude values for multiple phase bins.
+        - If 3D, it represents magnitude values for multiple phase bins across multiple cycles.
+        - Magnitude values are only z-score normalized arrays from the original.
+
+    Returns:
+    numpy.ndarray: An array with boundary values between largest peak value and 95 percent of lowest peak value,
+     extracted from the input magnitudes.
+        - For 2D amplitudes: A 2D array with boundary values at the same positions as the input.
+        - For 3D amplitudes: A 3D array with boundary values at the same positions as the input for each cycle.
+
+    Notes:
+    - This function extracts boundary values from FPP cycles.
+    - It can handle 2D or 3D FPP arrays, representing either single or multiple cycles.
+    - Peaks are extracted using the skimage `peak_local_max` function with specified parameters.
+    """
     adjusted_fpp = np.zeros(amplitudes.shape)
     if amplitudes.ndim == 2:
         peak_indices = peak_local_max(amplitudes, min_distance=1, threshold_abs=0)
@@ -305,6 +563,31 @@ def boundary_peaks(amplitudes):
 
 def rem_fpp_gen(rem_dict, x, sample_rate, frequencies, angles, ratio, boxcar_window=None, norm='', fpp_method='',
                 cog_method=''):
+    """
+    Generate a nested dictionary containing Frequency Phase Power plots and Centers of Gravity of cycles
+
+    Parameters:
+    rem_dict: A dictionary that contains the appropriate structure to parse cycles with their respective input sleep
+    signal
+    frequencies (numpy.ndarray): An array of frequencies corresponding to FPP frequencies.
+    angles (numpy.ndarray): An array of phase angles in degrees.
+    x (numpy.ndarray): The input 1D sleep signal.
+    ratio:
+
+    theta_range (tuple, optional): A tuple defining the theta frequency range (lower, upper).
+            Default is (5, 12).
+
+    Returns:
+    rem_dict: A nested dictionary of extracted signal data and signal source metadata
+
+    Notes:
+    - The dictionary output structure comes out as below:
+        |----REM 1
+        |    |----FPP_cycles:
+        |    |----CoG"
+        |----REM (...)
+        |    |--------(...)
+    """
     x = np.squeeze(x)
     cycles_dict = rem_dict
     rem_dict = {}
