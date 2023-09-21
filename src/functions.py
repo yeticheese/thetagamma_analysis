@@ -563,31 +563,6 @@ def boundary_peaks(amplitudes):
 
 def rem_fpp_gen(rem_dict, x, sample_rate, frequencies, angles, ratio, boxcar_window=None, norm='', fpp_method='',
                 cog_method=''):
-    """
-    Generate a nested dictionary containing Frequency Phase Power plots and Centers of Gravity of cycles
-
-    Parameters:
-    rem_dict: A dictionary that contains the appropriate structure to parse cycles with their respective input sleep
-    signal
-    frequencies (numpy.ndarray): An array of frequencies corresponding to FPP frequencies.
-    angles (numpy.ndarray): An array of phase angles in degrees.
-    x (numpy.ndarray): The input 1D sleep signal.
-    ratio:
-
-    theta_range (tuple, optional): A tuple defining the theta frequency range (lower, upper).
-            Default is (5, 12).
-
-    Returns:
-    rem_dict: A nested dictionary of extracted signal data and signal source metadata
-
-    Notes:
-    - The dictionary output structure comes out as below:
-        |----REM 1
-        |    |----FPP_cycles:
-        |    |----CoG"
-        |----REM (...)
-        |    |--------(...)
-    """
     x = np.squeeze(x)
     cycles_dict = rem_dict
     rem_dict = {}
