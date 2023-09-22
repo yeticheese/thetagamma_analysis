@@ -518,6 +518,14 @@ def max_peaks(amplitudes):
 
 
 def boundary_peaks(amplitudes):
+    # """
+    #
+    # :param amplitudes: An array of magnitude values of FPP cycles, can be amplitude or power.
+    # - If 2D, it represents magnitude values for multiple phase bins.
+    # - If 3D, it represents magnitude values for multiple phase bins across multiple cycles.
+    # - Magnitude values are only z-score normalized arrays from the original.
+    # :return:
+    # """
     """
     Extract maximum peaks from amplitude distributions.
 
@@ -563,6 +571,48 @@ def boundary_peaks(amplitudes):
 
 def rem_fpp_gen(rem_dict, x, sample_rate, frequencies, angles, ratio, boxcar_window=None, norm='', fpp_method='',
                 cog_method=''):
+    """
+        Generate a nested dictionary containing FPP data of cycles
+
+    Parameters:
+
+    rem_dict(dict): A loaded dictionary that has consistent structure to extract cycle indices.
+
+    x (numpy.ndarray): The input 1D sleep signal.
+
+    sample_rate (int or float): The sampling rate of the signal.
+
+    frequencies (numpy.ndarray): An array of frequencies.
+
+    angles (numpy.ndarray): An array of phase angles in degrees.
+
+    ratio (float): A ratio threshold for selecting magnitude values in the phase direction.
+
+    boxcar_window (int or tuple,optional): The size of the boxcar smoothing window.
+        - If int, it specifies the window size in both dimensions for a 2D signal.
+        - If tuple, it specifies the window size as (time_window, frequency_window) for a 2D signal.
+
+    norm (str,optional): Normalization method of the resulting wavelet transform spectrum, can be 'simple_x','simple_y',
+    'zscore_x', or 'zscore_y'.
+
+    fpp_method (str, optional): Transforming the input FPP cycles to more manageable arrays to calculate the
+    Center of Gravity, can be 'max_peaks' or 'boundary_peaks'.
+
+    cog_method(str,optional): Algorithm to decide which CoG method, pass 'nearest' for peak_cog algorithm
+
+
+
+    Returns:
+    rem_dict (dict): A nested dictionary of similar structure that contains keys to FPP cycle plots and CoG
+
+    Notes:
+    - The dictionary output structure comes out as below:
+        |----REM 1
+        |    |----FPP_cycles:
+        |    |----CoG:
+        |----REM (...)
+        |    |--------(...)
+    """
     x = np.squeeze(x)
     cycles_dict = rem_dict
     rem_dict = {}
